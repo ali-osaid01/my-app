@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DollarSign, Loader2 } from "lucide-react"
-import agentService, { AgentData, AgentApiResponse } from "@/lib/agentService"
+import agentService, { AgentApiResponse } from "@/lib/agentService"
 
 // Mock data for demonstration
 const mockLogs = [

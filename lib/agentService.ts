@@ -4,7 +4,7 @@ export interface AgentData {
   agent_name: string
   id: string
   input_tokens: number
-  output_data: null | any
+  output_data: null | string | object
   original_model: string
   input_data: string
   output_tokens: number
