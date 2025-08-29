@@ -159,7 +159,31 @@ const modelPricing = {
   "Amazon Titan Lite": { input: 0.00015, output: 0.0002 },
 }
 
+// Agent types enum
+enum AgentType {
+  ENUM_HANDLING = "enum_agent",
+  SCHEMA = "schema_agent", 
+  SELECT_RELEVANT_COLUMN = "select_column_agent",
+  SELECT_TABLE = "select_table_agent",
+  SQL_QUERY = "sql_query_agent"
+}
+
+// Available models for agent selection
+const availableAgentModels = [
+  "Gemini-2.5-flash",
+  "Claude 3.5 Sonnet", 
+  "GPT-4o"
+] as const
+
 export default function TokenCostTable() {
+  const [selectedAgent, setSelectedAgent] = useState<AgentType>(AgentType.ENUM_HANDLING)
+  const [agentModels, setAgentModels] = useState<Record<AgentType, string>>({
+    [AgentType.ENUM_HANDLING]: "Gemini-2.5-flash",
+    [AgentType.SCHEMA]: "Gemini-2.5-flash", 
+    [AgentType.SELECT_RELEVANT_COLUMN]: "Gemini-2.5-flash",
+    [AgentType.SELECT_TABLE]: "Gemini-2.5-flash",
+    [AgentType.SQL_QUERY]: "Gemini-2.5-flash"
+  })
   const [selectedModel, setSelectedModel] = useState<string>("Gemini 2.5 Flash")
   const [selectedPromptId, setSelectedPromptId] = useState<string>("")
   const [promptSearchInput, setPromptSearchInput] = useState<string>("")
@@ -175,6 +199,14 @@ export default function TokenCostTable() {
   const [statsError, setStatsError] = useState<string | null>(null)
   const [promptsError, setPromptsError] = useState<string | null>(null)
   const [promptTokensError, setPromptTokensError] = useState<string | null>(null)
+
+  // Handler to update model for a specific agent
+  const handleAgentModelChange = (agentType: AgentType, model: string) => {
+    setAgentModels(prev => ({
+      ...prev,
+      [agentType]: model
+    }))
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -519,6 +551,45 @@ export default function TokenCostTable() {
             Export to Excel
           </Button>
         </div>
+
+        {/* Agent Selection Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Agent Configuration</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+              {Object.values(AgentType).map((agentType) => (
+                <div key={agentType} className="space-y-3">
+                  <div className="text-center">
+                    <Badge 
+                      variant={selectedAgent === agentType ? "default" : "outline"}
+                      className="cursor-pointer px-3 py-1"
+                      onClick={() => setSelectedAgent(agentType)}
+                    >
+                      {agentType.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}
+                    </Badge>
+                  </div>
+                  <Select 
+                    value={agentModels[agentType]} 
+                    onValueChange={(model) => handleAgentModelChange(agentType, model)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableAgentModels.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
