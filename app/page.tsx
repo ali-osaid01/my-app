@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DollarSign, Loader2 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { DollarSign, Loader2, Download, Eye } from "lucide-react"
 import agentService, { AgentApiResponse, TokenUsageStatsResponse, PromptsSummaryResponse, PromptTokensResponse } from "@/lib/agentService"
+import * as XLSX from 'xlsx'
 
 // Mock data for demonstration
 const mockLogs = [
@@ -251,7 +253,7 @@ export default function TokenCostTable() {
   }
 
   // Handler for Enter key press
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handlePromptSearch()
     }
@@ -341,6 +343,169 @@ export default function TokenCostTable() {
   // Get pricing info for selected model
   const selectedModelPricing = modelPricing[selectedModel as keyof typeof modelPricing]
 
+  // Excel export function
+  const exportToExcel = () => {
+    const workbook = XLSX.utils.book_new()
+
+    // Sheet 1: Prompts Summary
+    if (promptsSummary && promptsSummary.data.length > 0) {
+      const promptsData = promptsSummary.data.map(prompt => {
+        const costs = calculateCost(prompt.input_tokens, prompt.output_tokens, selectedModel)
+        return {
+          'Prompt ID': prompt.prompt_id,
+          'Input Tokens': prompt.input_tokens,
+          'Output Tokens': prompt.output_tokens,
+          'Total Tokens': prompt.total_tokens,
+          [`Input Cost (${selectedModel})`]: `$${costs.inputCost.toFixed(4)}`,
+          [`Output Cost (${selectedModel})`]: `$${costs.outputCost.toFixed(4)}`,
+          [`Total Cost (${selectedModel})`]: `$${costs.totalCost.toFixed(4)}`,
+          'Timestamp': prompt.timestamp ? new Date(prompt.timestamp).toLocaleString() : 'N/A'
+        }
+      })
+      const promptsSheet = XLSX.utils.json_to_sheet(promptsData)
+      XLSX.utils.book_append_sheet(workbook, promptsSheet, "Prompts Summary")
+    }
+
+    // Sheet 2: Agent Matrix by Prompt
+    if (promptTokens && selectedPromptId) {
+      const agentMatrixData = []
+      
+      // Add header row with prompt ID
+      agentMatrixData.push({
+        'Metric': `Analysis for Prompt: ${selectedPromptId}`,
+        ...Object.keys(promptTokens.agents).reduce((acc, agentName) => {
+          acc[agentName] = ''
+          return acc
+        }, {} as Record<string, string>),
+        'Total': ''
+      })
+
+      // Input Tokens row
+      const inputTokensRow: Record<string, string> = { 'Metric': 'Input Tokens' }
+      Object.entries(promptTokens.agents).forEach(([agentName, data]) => {
+        inputTokensRow[agentName] = data.input_tokens.toLocaleString()
+      })
+      inputTokensRow['Total'] = promptTokens.summary.total_input_tokens.toLocaleString()
+      agentMatrixData.push(inputTokensRow)
+
+      // Output Tokens row
+      const outputTokensRow: Record<string, string> = { 'Metric': 'Output Tokens' }
+      Object.entries(promptTokens.agents).forEach(([agentName, data]) => {
+        outputTokensRow[agentName] = data.output_tokens.toLocaleString()
+      })
+      outputTokensRow['Total'] = promptTokens.summary.total_output_tokens.toLocaleString()
+      agentMatrixData.push(outputTokensRow)
+
+      // Total Tokens row
+      const totalTokensRow: Record<string, string> = { 'Metric': 'Total Tokens' }
+      Object.entries(promptTokens.agents).forEach(([agentName, data]) => {
+        totalTokensRow[agentName] = data.total_tokens.toLocaleString()
+      })
+      totalTokensRow['Total'] = promptTokens.summary.total_tokens.toLocaleString()
+      agentMatrixData.push(totalTokensRow)
+
+      // Input Cost row
+      const inputCostRow: Record<string, string> = { 'Metric': `Input Cost (${selectedModel})` }
+      Object.entries(promptTokens.agents).forEach(([agentName, data]) => {
+        const costs = calculateCost(data.input_tokens, data.output_tokens, selectedModel)
+        inputCostRow[agentName] = `$${costs.inputCost.toFixed(4)}`
+      })
+      const totalInputCost = calculateCost(promptTokens.summary.total_input_tokens, promptTokens.summary.total_output_tokens, selectedModel)
+      inputCostRow['Total'] = `$${totalInputCost.inputCost.toFixed(4)}`
+      agentMatrixData.push(inputCostRow)
+
+      // Output Cost row
+      const outputCostRow: Record<string, string> = { 'Metric': `Output Cost (${selectedModel})` }
+      Object.entries(promptTokens.agents).forEach(([agentName, data]) => {
+        const costs = calculateCost(data.input_tokens, data.output_tokens, selectedModel)
+        outputCostRow[agentName] = `$${costs.outputCost.toFixed(4)}`
+      })
+      outputCostRow['Total'] = `$${totalInputCost.outputCost.toFixed(4)}`
+      agentMatrixData.push(outputCostRow)
+
+      // Total Cost row
+      const totalCostRow: Record<string, string> = { 'Metric': `Total Cost (${selectedModel})` }
+      Object.entries(promptTokens.agents).forEach(([agentName, data]) => {
+        const costs = calculateCost(data.input_tokens, data.output_tokens, selectedModel)
+        totalCostRow[agentName] = `$${costs.totalCost.toFixed(4)}`
+      })
+      totalCostRow['Total'] = `$${totalInputCost.totalCost.toFixed(4)}`
+      agentMatrixData.push(totalCostRow)
+
+      const agentMatrixSheet = XLSX.utils.json_to_sheet(agentMatrixData)
+      XLSX.utils.book_append_sheet(workbook, agentMatrixSheet, "Agent Matrix")
+    }
+
+    // Sheet 3: Usage Summary
+    if (usageSummaryWithCosts) {
+      const usageData = [
+        {
+          'Period': 'Today',
+          'Input Tokens': usageSummaryWithCosts.today.input_tokens.toLocaleString(),
+          'Output Tokens': usageSummaryWithCosts.today.output_tokens.toLocaleString(),
+          'Total Requests': usageSummaryWithCosts.today.total_requests.toLocaleString(),
+          [`Input Cost (${selectedModel})`]: `$${usageSummaryWithCosts.today.inputCost.toFixed(4)}`,
+          [`Output Cost (${selectedModel})`]: `$${usageSummaryWithCosts.today.outputCost.toFixed(4)}`,
+          'Total Cost': `$${usageSummaryWithCosts.today.totalCost.toFixed(4)}`
+        },
+        {
+          'Period': 'Last 7 Days',
+          'Input Tokens': usageSummaryWithCosts.last7Days.input_tokens.toLocaleString(),
+          'Output Tokens': usageSummaryWithCosts.last7Days.output_tokens.toLocaleString(),
+          'Total Requests': usageSummaryWithCosts.last7Days.total_requests.toLocaleString(),
+          [`Input Cost (${selectedModel})`]: `$${usageSummaryWithCosts.last7Days.inputCost.toFixed(4)}`,
+          [`Output Cost (${selectedModel})`]: `$${usageSummaryWithCosts.last7Days.outputCost.toFixed(4)}`,
+          'Total Cost': `$${usageSummaryWithCosts.last7Days.totalCost.toFixed(4)}`
+        },
+        {
+          'Period': 'Last Month',
+          'Input Tokens': usageSummaryWithCosts.lastMonth.input_tokens.toLocaleString(),
+          'Output Tokens': usageSummaryWithCosts.lastMonth.output_tokens.toLocaleString(),
+          'Total Requests': usageSummaryWithCosts.lastMonth.total_requests.toLocaleString(),
+          [`Input Cost (${selectedModel})`]: `$${usageSummaryWithCosts.lastMonth.inputCost.toFixed(4)}`,
+          [`Output Cost (${selectedModel})`]: `$${usageSummaryWithCosts.lastMonth.outputCost.toFixed(4)}`,
+          'Total Cost': `$${usageSummaryWithCosts.lastMonth.totalCost.toFixed(4)}`
+        },
+        {
+          'Period': 'Lifetime',
+          'Input Tokens': usageSummaryWithCosts.lifetime.input_tokens.toLocaleString(),
+          'Output Tokens': usageSummaryWithCosts.lifetime.output_tokens.toLocaleString(),
+          'Total Requests': usageSummaryWithCosts.lifetime.total_requests.toLocaleString(),
+          [`Input Cost (${selectedModel})`]: `$${usageSummaryWithCosts.lifetime.inputCost.toFixed(4)}`,
+          [`Output Cost (${selectedModel})`]: `$${usageSummaryWithCosts.lifetime.outputCost.toFixed(4)}`,
+          'Total Cost': `$${usageSummaryWithCosts.lifetime.totalCost.toFixed(4)}`
+        }
+      ]
+      const usageSheet = XLSX.utils.json_to_sheet(usageData)
+      XLSX.utils.book_append_sheet(workbook, usageSheet, "Usage Summary")
+    }
+
+    // Sheet 4: Detailed Token Usage
+    const detailedData = displayData.map(log => {
+      const costs = calculateCost(log.input_tokens || 0, log.output_tokens || 0, selectedModel)
+      return {
+        'Agent Name': log.agent_name || 'N/A',
+        'Input Tokens': (log.input_tokens || 0).toLocaleString(),
+        'Output Tokens': (log.output_tokens || 0).toLocaleString(),
+        'Total Tokens': ((log.input_tokens || 0) + (log.output_tokens || 0)).toLocaleString(),
+        'Original Model': log.original_model || 'Unknown',
+        [`Input Cost (${selectedModel})`]: `$${costs.inputCost.toFixed(4)}`,
+        [`Output Cost (${selectedModel})`]: `$${costs.outputCost.toFixed(4)}`,
+        [`Total Cost (${selectedModel})`]: `$${costs.totalCost.toFixed(4)}`,
+        'Timestamp': log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'
+      }
+    })
+    const detailedSheet = XLSX.utils.json_to_sheet(detailedData)
+    XLSX.utils.book_append_sheet(workbook, detailedSheet, "Detailed Usage")
+
+    // Generate filename with current date and selected model
+    const currentDate = new Date().toISOString().split('T')[0]
+    const filename = `Token_Cost_Analysis_${selectedModel.replace(/\s+/g, '_')}_${currentDate}.xlsx`
+
+    // Save the file
+    XLSX.writeFile(workbook, filename)
+  }
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -349,6 +514,10 @@ export default function TokenCostTable() {
             <h1 className="text-3xl font-bold text-foreground">Token Cost Calculator</h1>
             <p className="text-muted-foreground">Calculate costs for different AI models</p>
           </div>
+          <Button onClick={exportToExcel} className="flex items-center gap-2">
+            <Download className="h-4 w-4" />
+            Export to Excel
+          </Button>
         </div>
 
         <Card>
@@ -419,7 +588,7 @@ export default function TokenCostTable() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Prompt</TableHead>
+                      <TableHead>Prompt ID</TableHead>
                       <TableHead className="text-right">Input Tokens</TableHead>
                       <TableHead className="text-right">Output Tokens</TableHead>
                       <TableHead className="text-right">Total Tokens</TableHead>
@@ -496,7 +665,7 @@ export default function TokenCostTable() {
                     type="text"
                     value={promptSearchInput}
                     onChange={(e) => setPromptSearchInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
+                    onKeyDown={handleKeyDown}
                     placeholder="Enter prompt ID to analyze"
                     className="flex-1"
                   />
@@ -775,6 +944,7 @@ export default function TokenCostTable() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Agent Name</TableHead>
+                      <TableHead>Prompt (Input Data)</TableHead>
                       <TableHead className="text-right">Input Tokens</TableHead>
                       <TableHead className="text-right">Output Tokens</TableHead>
                       <TableHead className="text-right">Total Tokens</TableHead>
@@ -792,6 +962,34 @@ export default function TokenCostTable() {
                         <TableRow key={log.id}>
                           <TableCell>
                             <Badge variant="outline">{log.agent_name || 'N/A'}</Badge>
+                          </TableCell>
+                          <TableCell className="max-w-md">
+                            <div className="flex items-center gap-2">
+                              <div className="truncate text-sm text-muted-foreground flex-1" title={log.input_data || 'No prompt available'}>
+                                {log.input_data ? `${log.input_data.substring(0, 50)}...` : 'No prompt available'}
+                              </div>
+                              {log.input_data && (
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="p-1 h-6 w-6">
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent className="min-w-6xl max-h-[80vh] overflow-y-auto">
+                                    <DialogHeader>
+                                      <DialogTitle>Full Prompt - {log.agent_name}</DialogTitle>
+                                    </DialogHeader>
+                                    <div className="mt-4">
+                                      <div className="bg-muted p-4 rounded-lg">
+                                        <pre className="whitespace-pre-wrap text-sm font-mono break-words">
+                                          {log.input_data}
+                                        </pre>
+                                      </div>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="font-mono text-right">
                             {(log.input_tokens || 0).toLocaleString()}
@@ -821,7 +1019,7 @@ export default function TokenCostTable() {
                       )
                     }) || (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                           No data available
                         </TableCell>
                       </TableRow>
