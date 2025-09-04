@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { DollarSign, Loader2, Download, Eye } from "lucide-react"
-import agentService, { AgentApiResponse, TokenUsageStatsResponse, PromptsSummaryResponse, PromptTokensResponse } from "@/lib/agentService"
+import { DollarSign, Loader2, Download, Eye, RefreshCw } from "lucide-react"
+import { useAgentData, useTokenUsageStats, usePromptsSummary, usePromptTokens } from "@/hooks/use-agent-queries"
 import * as XLSX from 'xlsx'
 
 // Mock data for demonstration
@@ -187,18 +187,37 @@ export default function TokenCostTable() {
   const [selectedModel, setSelectedModel] = useState<string>("Gemini 2.5 Flash")
   const [selectedPromptId, setSelectedPromptId] = useState<string>("")
   const [promptSearchInput, setPromptSearchInput] = useState<string>("")
-  const [agentData, setAgentData] = useState<AgentApiResponse | null>(null)
-  const [usageStats, setUsageStats] = useState<TokenUsageStatsResponse | null>(null)
-  const [promptsSummary, setPromptsSummary] = useState<PromptsSummaryResponse | null>(null)
-  const [promptTokens, setPromptTokens] = useState<PromptTokensResponse | null>(null)
-  const [loading, setLoading] = useState<boolean>(true)
-  const [statsLoading, setStatsLoading] = useState<boolean>(true)
-  const [promptsLoading, setPromptsLoading] = useState<boolean>(true)
-  const [promptTokensLoading, setPromptTokensLoading] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
-  const [statsError, setStatsError] = useState<string | null>(null)
-  const [promptsError, setPromptsError] = useState<string | null>(null)
-  const [promptTokensError, setPromptTokensError] = useState<string | null>(null)
+  const [agentDataPage, setAgentDataPage] = useState(1)
+  const [promptsSummaryPage, setPromptsSummaryPage] = useState(1)
+
+  // Use React Query hooks
+  const { 
+    data: agentData, 
+    isLoading: agentDataLoading, 
+    error: agentDataError,
+    refetch: refetchAgentData
+  } = useAgentData(agentDataPage)
+
+  const { 
+    data: usageStats, 
+    isLoading: statsLoading, 
+    error: statsError,
+    refetch: refetchUsageStats
+  } = useTokenUsageStats()
+
+  const { 
+    data: promptsSummary, 
+    isLoading: promptsLoading, 
+    error: promptsError,
+    refetch: refetchPromptsSummary
+  } = usePromptsSummary(promptsSummaryPage)
+
+  const { 
+    data: promptTokens, 
+    isLoading: promptTokensLoading, 
+    error: promptTokensError,
+    refetch: refetchPromptTokens
+  } = usePromptTokens(selectedPromptId)
 
   // Handler to update model for a specific agent
   const handleAgentModelChange = (agentType: AgentType, model: string) => {
@@ -208,79 +227,10 @@ export default function TokenCostTable() {
     }))
   }
 
-  useEffect(() => {
-    const fetchData = async () => {
-      // Fetch agent data
-      try {
-        setLoading(true)
-        setError(null)
-        const response = await agentService.getAgentData()
-        setAgentData(response)
-      } catch (err) {
-        setError('Failed to fetch agent data')
-        console.error('Error fetching agent data:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    const fetchUsageStats = async () => {
-      // Fetch usage stats
-      try {
-        setStatsLoading(true)
-        setStatsError(null)
-        const statsResponse = await agentService.getTokenUsageStats()
-        setUsageStats(statsResponse)
-      } catch (err) {
-        setStatsError('Failed to fetch usage stats')
-        console.error('Error fetching usage stats:', err)
-      } finally {
-        setStatsLoading(false)
-      }
-    }
-
-    const fetchPromptsSummary = async () => {
-      // Fetch prompts summary
-      try {
-        setPromptsLoading(true)
-        setPromptsError(null)
-        const promptsResponse = await agentService.getPromptsSummary()
-        setPromptsSummary(promptsResponse)
-      } catch (err) {
-        setPromptsError('Failed to fetch prompts summary')
-        console.error('Error fetching prompts summary:', err)
-      } finally {
-        setPromptsLoading(false)
-      }
-    }
-
-    fetchData()
-    fetchUsageStats()
-    fetchPromptsSummary()
-  }, [])
-
-  // Function to fetch prompt tokens data
-  const fetchPromptTokens = async (promptId: string) => {
-    if (!promptId) return
-    
-    try {
-      setPromptTokensLoading(true)
-      setPromptTokensError(null)
-      const promptTokensResponse = await agentService.getPromptTokens(promptId)
-      setPromptTokens(promptTokensResponse)
-    } catch (err) {
-      setPromptTokensError('Failed to fetch prompt tokens data')
-      console.error('Error fetching prompt tokens:', err)
-    } finally {
-      setPromptTokensLoading(false)
-    }
-  }
-
   // Handler for prompt search
   const handlePromptSearch = () => {
     if (promptSearchInput.trim()) {
       setSelectedPromptId(promptSearchInput.trim())
-      fetchPromptTokens(promptSearchInput.trim())
     }
   }
 
@@ -288,6 +238,16 @@ export default function TokenCostTable() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handlePromptSearch()
+    }
+  }
+
+  // Refresh all data
+  const refreshAllData = () => {
+    refetchAgentData()
+    refetchUsageStats()
+    refetchPromptsSummary()
+    if (selectedPromptId) {
+      refetchPromptTokens()
     }
   }
 
@@ -546,10 +506,16 @@ export default function TokenCostTable() {
             <h1 className="text-3xl font-bold text-foreground">Token Cost Calculator</h1>
             <p className="text-muted-foreground">Calculate costs for different AI models</p>
           </div>
-          <Button onClick={exportToExcel} className="flex items-center gap-2">
-            <Download className="h-4 w-4" />
-            Export to Excel
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={refreshAllData} variant="outline" className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+            <Button onClick={exportToExcel} className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              Export to Excel
+            </Button>
+          </div>
         </div>
 
         {/* Agent Selection Section */}
@@ -645,7 +611,7 @@ export default function TokenCostTable() {
             <CardTitle className="flex items-center gap-2">
               Prompts Summary
               {promptsLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {promptsError && <span className="text-sm text-red-500 font-normal">({promptsError})</span>}
+              {promptsError && <span className="text-sm text-red-500 font-normal">({promptsError.message})</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -704,9 +670,29 @@ export default function TokenCostTable() {
                   </TableBody>
                 </Table>
                 {promptsSummary.total > promptsSummary.page_size && (
-                  <div className="mt-4 text-sm text-muted-foreground text-center">
-                    Showing {promptsSummary.data.length} of {promptsSummary.total} prompts
-                    (Page {promptsSummary.page} of {promptsSummary.total_pages})
+                  <div className="mt-4 flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {promptsSummary.data.length} of {promptsSummary.total} prompts
+                      (Page {promptsSummary.page} of {promptsSummary.total_pages})
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={promptsSummaryPage === 1}
+                        onClick={() => setPromptsSummaryPage(p => Math.max(1, p - 1))}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={promptsSummaryPage === promptsSummary.total_pages}
+                        onClick={() => setPromptsSummaryPage(p => Math.min(promptsSummary.total_pages, p + 1))}
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -724,7 +710,7 @@ export default function TokenCostTable() {
             <CardTitle className="flex items-center gap-2">
               Agent Matrix by Prompt
               {promptTokensLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {promptTokensError && <span className="text-sm text-red-500 font-normal">({promptTokensError})</span>}
+              {promptTokensError && <span className="text-sm text-red-500 font-normal">({promptTokensError.message})</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -874,7 +860,7 @@ export default function TokenCostTable() {
             <CardTitle className="flex items-center gap-2">
               Usage Summary
               {statsLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {statsError && <span className="text-sm text-red-500 font-normal">({statsError})</span>}
+              {statsError && <span className="text-sm text-red-500 font-normal">({statsError.message})</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -999,12 +985,12 @@ export default function TokenCostTable() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               Detailed Token Usage & Cost Analysis
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {error && <span className="text-sm text-red-500 font-normal">({error})</span>}
+              {agentDataLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {agentDataError && <span className="text-sm text-red-500 font-normal">({agentDataError.message})</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {agentDataLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin mr-2" />
                 <span>Loading agent data...</span>
@@ -1097,6 +1083,32 @@ export default function TokenCostTable() {
                     )}
                   </TableBody>
                 </Table>
+                {agentData && agentData.total > agentData.page_size && (
+                  <div className="mt-4 flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {agentData.data.length} of {agentData.total} records
+                      (Page {agentData.page} of {agentData.total_pages})
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={agentDataPage === 1}
+                        onClick={() => setAgentDataPage(p => Math.max(1, p - 1))}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={agentDataPage === agentData.total_pages}
+                        onClick={() => setAgentDataPage(p => Math.min(agentData.total_pages, p + 1))}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
