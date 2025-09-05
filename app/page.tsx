@@ -71,9 +71,7 @@ const mockLogs = [
   },
 ]
 
-// Model pricing per 1K tokens (prices as of January 2025)
 const modelPricing = {
-  // OpenAI Models (per 1K tokens)
   "GPT-4o": { input: 0.0025, output: 0.01 },
   "GPT-4o mini": { input: 0.00015, output: 0.0006 },
   "GPT-3.5 Turbo": { input: 0.0005, output: 0.0015 },
@@ -87,7 +85,7 @@ const modelPricing = {
   "Claude 3 Haiku": { input: 0.00025, output: 0.00125 },
 
   // Google Gemini Models (per 1K tokens)
-  "Gemini 2.5 Flash": { input: 0.00001875, output: 0.000075 },
+  "Gemini 2.5 Flash": { input: 0.0003, output: 0.0025 },
   "Gemini 2.0 Flash": { input: 0.00001315, output: 0.0000526 },
   "Gemini 1.5 Pro": { input: 0.00125, output: 0.005 },
   "Gemini 1.5 Flash": { input: 0.000075, output: 0.0003 },
